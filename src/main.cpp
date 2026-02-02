@@ -214,7 +214,7 @@ JLCXX_MODULE define_julia_module(jlcxx::Module& mod)
     mod.method("produce", [](int producer_id, const std::string& topic, int partition,
                             const std::string& key, const std::string& value) -> std::string {
         if (!producer_store.count(producer_id)) {
-            return "Producer not found";
+            return "KafkaProducer handle not found. It may be closed or invalid.";
         }
         kafka::clients::producer::ProducerRecord record(
             topic, kafka::Partition(partition),
@@ -234,7 +234,7 @@ JLCXX_MODULE define_julia_module(jlcxx::Module& mod)
     mod.method("produce_binary", [](int producer_id, const std::string& topic, int partition,
                                    const std::string& key, jlcxx::ArrayRef<uint8_t> value) -> std::string {
         if (!producer_store.count(producer_id)) {
-            return "Producer not found";
+            return "KafkaProducer handle not found. It may be closed or invalid.";
         }
         kafka::clients::producer::ProducerRecord record(
             topic, kafka::Partition(partition),
@@ -274,21 +274,22 @@ JLCXX_MODULE define_julia_module(jlcxx::Module& mod)
 
     mod.method("consumer_poll", [](int consumer_id, int timeout_ms) -> std::string {
         std::string result;
-        if (consumer_store.count(consumer_id)) {
-            auto records = consumer_store[consumer_id]->poll(std::chrono::milliseconds(timeout_ms));
-            for (const auto& record : records) {
-                result.append(record.topic()).push_back('\t');
-                result.append(std::to_string(record.partition())).push_back('\t');
-                result.append(std::to_string(record.offset())).push_back('\t');
-                const auto& key = record.key();
-                const auto& value = record.value();
-                const std::string key_b64 = base64_encode(key.data(), key.size());
-                const std::string value_b64 = base64_encode(value.data(), value.size());
-                result.append(key_b64).push_back('\t');
-                result.append(value_b64).push_back('\t');
-                result.append(std::to_string(record.timestamp().msSinceEpoch));
-                result.push_back('\n');
-            }
+        if (!consumer_store.count(consumer_id)) {
+            return "ERROR: KafkaConsumer handle not found. It may be closed or invalid.";
+        }
+        auto records = consumer_store[consumer_id]->poll(std::chrono::milliseconds(timeout_ms));
+        for (const auto& record : records) {
+            result.append(record.topic()).push_back('\t');
+            result.append(std::to_string(record.partition())).push_back('\t');
+            result.append(std::to_string(record.offset())).push_back('\t');
+            const auto& key = record.key();
+            const auto& value = record.value();
+            const std::string key_b64 = base64_encode(key.data(), key.size());
+            const std::string value_b64 = base64_encode(value.data(), value.size());
+            result.append(key_b64).push_back('\t');
+            result.append(value_b64).push_back('\t');
+            result.append(std::to_string(record.timestamp().msSinceEpoch));
+            result.push_back('\n');
         }
         return result;
     });
