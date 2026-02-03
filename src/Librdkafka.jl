@@ -51,9 +51,7 @@ const libkafka = let
     # Fallback to local build directories
     if !isfile(lib_path)
         candidates = (
-            joinpath(@__DIR__, "build", "lib", lib_name),
-            joinpath(pkg_dir, "build", "lib", lib_name),
-            joinpath(pkg_dir, "src", "build", "lib", lib_name),
+            joinpath(pkg_dir, "deps", "src", "build", "lib", lib_name),
         )
         for path in candidates
             if isfile(path)
@@ -82,8 +80,8 @@ const libkafka = let
 
         To build from source on $platform_name:
         1. cd ~/.julia/packages/Librdkafka/*/
-        2. cmake -S src -B src/build
-        3. cmake --build src/build
+        2. cmake -S deps/src -B deps/src/build
+        3. cmake --build deps/src/build
 
         Or install from dev mode:
         julia> using Pkg
