@@ -5,8 +5,10 @@ using CyrusSASL_jll
 
 const _libkafka_name = "libkafka.$(Libdl.dlext)"
 const _libkafka_candidates = (
+    joinpath(@__DIR__, "..", "lib"),
     joinpath(@__DIR__, "build", "lib"),
     joinpath(@__DIR__, "..", "build", "lib"),
+    joinpath(@__DIR__, "..", "deps", "src", "build", "lib"),
     joinpath(@__DIR__, "..", "src", "build", "lib"),
 )
 
@@ -17,7 +19,7 @@ function _locate_libkafka()
             return path
         end
     end
-    error("Could not locate $(_libkafka_name). Run `cmake -S src -B src/build && cmake --build src/build` first.")
+    error("Could not locate $(_libkafka_name). Run `cmake -S deps/src -B deps/src/build && cmake --build deps/src/build` first.")
 end
 
 const _dlopen_handles = Ref{Vector{Ptr{Nothing}}}(Ptr{Nothing}[])
