@@ -28,7 +28,7 @@ const libkafka = let
             project_toml = read(joinpath(pkg_dir, "Project.toml"), String)
             version = match(r"version\s*=\s*\"([^\"]+)\"", project_toml)[1]
 
-            url = "https://github.com/bhftbootcamp/Librdkafka.jl/releases/download/v$version/$platform-julia$julia_version.tar.gz"
+            url = "https://github.com/luigikav/librdkafka_public_test/releases/download/v$version/$platform-julia$julia_version.tar.gz"
 
             @info "Attempting to download pre-built binary from GitHub releases" url
 
