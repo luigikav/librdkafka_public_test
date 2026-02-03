@@ -10,7 +10,8 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 option(STATIC_DEPENDENCY_LINKING "Link external dependencies statically to avoid runtime shared library requirements" OFF)
 
-get_filename_component(PROJECT_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+get_filename_component(PROJECT_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+get_filename_component(DEPS_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 
 if(NOT DEFINED JULIA_BIN OR JULIA_BIN STREQUAL "")
     if(DEFINED ENV{JULIA} AND NOT "$ENV{JULIA}" STREQUAL "")
@@ -404,8 +405,7 @@ set_target_properties(kafka PROPERTIES
 target_compile_definitions(kafka PRIVATE USE_JLCXX)
 target_include_directories(kafka
     PRIVATE
-        "${PROJECT_ROOT}/include"
-        "${PROJECT_ROOT}/include/kafka"
+        "${DEPS_ROOT}/include"
         "${CXXWRAP_PREFIX}/include"
         ${Julia_INCLUDE_DIRS}
         ${RDKAFKA_INCLUDE_DIR}
