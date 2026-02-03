@@ -52,7 +52,7 @@ jobs:
 
       - name: Build C++ wrapper
         run: |
-          cd src
+          cd deps/src
           cmake -S . -B build
           cmake --build build
 
@@ -63,7 +63,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          cp src/build/lib/libkafka.${{ matrix.config.lib_ext }} dist/
+          cp deps/src/build/lib/libkafka.${{ matrix.config.lib_ext }} dist/
           cd dist
           tar -czf ../${{ matrix.config.platform }}-julia${{ matrix.julia }}.tar.gz *
 

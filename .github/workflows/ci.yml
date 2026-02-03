@@ -36,7 +36,7 @@ jobs:
 
       - name: Build C++ wrapper
         run: |
-          cd src
+          cd deps/src
           cmake -S . -B build
           cmake --build build
 
@@ -45,8 +45,8 @@ jobs:
 
       - name: Verify build artifacts
         run: |
-          ls -lh src/build/lib/
-          file src/build/lib/libkafka.so
+          ls -lh deps/src/build/lib/
+          file deps/src/build/lib/libkafka.*
 
       # TODO: Add Julia tests when test/runtests.jl is created
       # - name: Run tests
