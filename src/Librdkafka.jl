@@ -28,7 +28,7 @@ const libkafka = let
             project_toml = read(joinpath(pkg_dir, "Project.toml"), String)
             version = match(r"version\s*=\s*\"([^\"]+)\"", project_toml)[1]
 
-            url = "https://github.com/luigikav/librdkafka_public_test/releases/download/v$version/$platform-julia$julia_version.tar.gz"
+            url = "https://github.com/bhftbootcamp/Librdkafka.jl/releases/download/v$version/$platform-julia$julia_version.tar.gz"
 
             @info "Attempting to download pre-built binary from GitHub releases" url
 
@@ -106,7 +106,7 @@ include("logging.jl")
 
 export KafkaProducer, KafkaConsumer, ConsumerRecord, KafkaClientError, KafkaError
 export produce, produce_binary, subscribe, poll, poll_one, commit, assign, seek_to_beginning, commit_record
-export set_log_level!, set_log_format!, disable_logs!, enable_default_logs!, DEFAULT_LOG_FORMAT
+export set_log_level!, set_log_format!, set_log_stdout!, set_log_file!, disable_logs!, enable_default_logs!, DEFAULT_LOG_FORMAT
 export decode_base64_bytes, decode_base64_string
 export BOOTSTRAP_SERVERS, CLIENT_ID, GROUP_ID, AUTO_OFFSET_RESET, ENABLE_AUTO_COMMIT, RD_KAFKA_OFFSET_INVALID, get_bootstrap_servers
 

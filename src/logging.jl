@@ -28,4 +28,14 @@ end
 
 disable_logs!() = (logging_disable(); nothing)
 set_log_format!(format::AbstractString=DEFAULT_LOG_FORMAT) = (logging_set_format(String(format)); nothing)
+set_log_stdout!() = (logging_set_stdout(); nothing)
+function set_log_file!(path::AbstractString; append::Bool=true)
+    ok = logging_set_file(String(path), append)
+    if !ok
+        _throw_error(:operation, :logging_set_file,
+            "Failed to open log file for writing.",
+            details=_details(:path => String(path), :append => append))
+    end
+    return nothing
+end
 enable_default_logs!() = (logging_enable_default(); nothing)

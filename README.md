@@ -6,7 +6,7 @@ Julia wrapper for [librdkafka](https://github.com/edenhill/librdkafka).
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/maxfadson/Librdkafka.jl")
+Pkg.add(url="https://github.com/luigikav/Librdkafka.jl")
 ```
 
 Pre-built binaries are automatically downloaded from GitHub Releases (Linux x86_64, Julia 1.10).

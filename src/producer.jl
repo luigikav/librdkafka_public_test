@@ -37,7 +37,7 @@ function _handle_produce_error(err::AbstractString, operation::Symbol, details::
             details=details)
     end
     _throw_error(:operation, operation,
-        "Kafka producer failed to send message.",
+        "Kafka producer failed to send message: $(err)",
         details=vcat(details, "kafka_error=$(err)"))
 end
 
@@ -57,7 +57,7 @@ function produce(p::KafkaProducer, topic::AbstractString, partition::Integer, ke
     if !isempty(err)
         _handle_produce_error(err, :produce, details)
     end
-    return err
+    return nothing
 end
 
 function produce_binary(p::KafkaProducer, topic::AbstractString, partition::Integer, key::AbstractString, value::Vector{UInt8})
@@ -75,5 +75,5 @@ function produce_binary(p::KafkaProducer, topic::AbstractString, partition::Inte
     if !isempty(err)
         _handle_produce_error(err, :produce_binary, details)
     end
-    return err
+    return nothing
 end

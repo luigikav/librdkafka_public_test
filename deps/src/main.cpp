@@ -3,16 +3,20 @@
 #include <jlcxx/stl.hpp>
 #endif
 
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <ctime>
 #include <exception>
+#include <fstream>
 #include <functional>
 #include <iomanip>
 #include <iostream>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
+#include <sstream>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -59,6 +63,102 @@ std::string base64_encode(const void* data, size_t len)
     }
     return out;
 }
+
+enum class LogSink
+{
+    Stdout,
+    File
+};
+
+struct LogState
+{
+    std::mutex mutex;
+    bool enabled = true;
+    bool use_default_format = true;
+    std::string format = "{timestamp} [{level}] {message}";
+    LogSink sink = LogSink::Stdout;
+    std::string file_path;
+    bool file_append = true;
+    std::unique_ptr<std::ofstream> file;
+};
+
+LogState& log_state()
+{
+    static LogState state;
+    return state;
+}
+
+std::string format_log_line(const std::string& fmt, int level, const char* filename, int lineno, const char* msg)
+{
+    auto replace_all = [](std::string& str, const std::string& from, const std::string& to) {
+        if (from.empty()) return;
+        std::size_t start_pos = 0;
+        while ((start_pos = str.find(from, start_pos)) != std::string::npos) {
+            str.replace(start_pos, from.length(), to);
+            start_pos += to.length();
+        }
+    };
+
+    std::string line = fmt;
+    replace_all(line, "{timestamp}", kafka::utility::getCurrentTime());
+    replace_all(line, "{level}", kafka::Log::levelString(static_cast<std::size_t>(level)));
+    replace_all(line, "{level_int}", std::to_string(level));
+    replace_all(line, "{file}", filename ? filename : "");
+    replace_all(line, "{line}", std::to_string(lineno));
+    replace_all(line, "{message}", msg ? msg : "");
+
+    return line;
+}
+
+std::ostream* log_stream(LogState& state)
+{
+    if (state.sink == LogSink::File) {
+        if (!state.file || !state.file->is_open()) {
+            if (state.file_path.empty()) {
+                return nullptr;
+            }
+            auto mode = std::ios::out | (state.file_append ? std::ios::app : std::ios::trunc);
+            state.file = std::make_unique<std::ofstream>(state.file_path, mode);
+        }
+        if (!state.file || !state.file->is_open()) {
+            return nullptr;
+        }
+        return state.file.get();
+    }
+    return &std::cout;
+}
+
+void emit_log(int level, const char* filename, int lineno, const char* msg)
+{
+    auto& state = log_state();
+    std::lock_guard<std::mutex> guard(state.mutex);
+    if (!state.enabled) {
+        return;
+    }
+
+    std::string line;
+    if (state.use_default_format) {
+        std::ostringstream oss;
+        oss << "[" << kafka::utility::getCurrentTime() << "]"
+            << kafka::Log::levelString(static_cast<std::size_t>(level)) << " "
+            << (msg ? msg : "");
+        line = oss.str();
+    } else {
+        line = format_log_line(state.format, level, filename, lineno, msg);
+    }
+
+    std::ostream* out = log_stream(state);
+    if (!out) {
+        return;
+    }
+    (*out) << line << std::endl;
+}
+
+kafka::clients::LogCallback& global_log_callback()
+{
+    static kafka::clients::LogCallback cb = emit_log;
+    return cb;
+}
 }  // namespace
 
 JLCXX_MODULE define_julia_module(jlcxx::Module& mod)
@@ -72,47 +172,12 @@ JLCXX_MODULE define_julia_module(jlcxx::Module& mod)
 
     (void)jlcxx::julia_type<std::vector<std::string>>();
 
-    auto format_log_line = [](const std::string& fmt, int level, const char* filename, int lineno, const char* msg) {
-        auto now = std::chrono::system_clock::now();
-        std::time_t now_time = std::chrono::system_clock::to_time_t(now);
-        std::tm tm_now{};
-#if defined(_MSC_VER)
-        localtime_s(&tm_now, &now_time);
-#else
-        localtime_r(&now_time, &tm_now);
-#endif
-        std::ostringstream ts;
-        ts << std::put_time(&tm_now, "%Y-%m-%d %H:%M:%S");
-
-        auto replace_all = [](std::string& str, const std::string& from, const std::string& to) {
-            if (from.empty()) return;
-            std::size_t start_pos = 0;
-            while ((start_pos = str.find(from, start_pos)) != std::string::npos) {
-                str.replace(start_pos, from.length(), to);
-                start_pos += to.length();
-            }
-        };
-
-        std::string line = fmt;
-        replace_all(line, "{timestamp}", ts.str());
-        replace_all(line, "{level}", kafka::Log::levelString(static_cast<std::size_t>(level)));
-        replace_all(line, "{level_int}", std::to_string(level));
-        replace_all(line, "{file}", filename ? filename : "");
-        replace_all(line, "{line}", std::to_string(lineno));
-        replace_all(line, "{message}", msg ? msg : "");
-
-        return line;
-    };
-
-    auto make_logger = [&format_log_line](const std::string& fmt) {
-        return [format = fmt, formatter = format_log_line](int level, const char* filename, int lineno, const char* msg) {
-            std::cout << formatter(format, level, filename, lineno, msg) << std::endl;
-        };
-    };
+    kafka::setGlobalLogger(global_log_callback());
 
     mod.method("create_properties", []() -> int {
         int id = next_id++;
         properties_store[id] = std::make_shared<kafka::Properties>();
+        properties_store[id]->put("log_cb", global_log_callback());
         return id;
     });
 
@@ -137,6 +202,9 @@ JLCXX_MODULE define_julia_module(jlcxx::Module& mod)
 
     mod.method("create_kafka_producer", [](int props_id) -> int {
         if (!properties_store.count(props_id)) return 0;
+        if (!properties_store[props_id]->contains("log_cb")) {
+            properties_store[props_id]->put("log_cb", global_log_callback());
+        }
         int id = next_id++;
         producer_store[id] = std::make_shared<kafka::clients::producer::KafkaProducer>(*properties_store[props_id]);
         return id;
@@ -176,15 +244,56 @@ JLCXX_MODULE define_julia_module(jlcxx::Module& mod)
     });
 
     mod.method("logging_disable", []() {
-        kafka::setGlobalLogger(kafka::NullLogger);
+        auto& state = log_state();
+        std::lock_guard<std::mutex> guard(state.mutex);
+        state.enabled = false;
     });
 
-    mod.method("logging_set_format", [make_logger](const std::string& fmt) {
-        kafka::setGlobalLogger(make_logger(fmt));
+    mod.method("logging_set_format", [](const std::string& fmt) {
+        auto& state = log_state();
+        std::lock_guard<std::mutex> guard(state.mutex);
+        state.enabled = true;
+        state.use_default_format = false;
+        state.format = fmt;
+    });
+
+    mod.method("logging_set_stdout", []() {
+        auto& state = log_state();
+        std::lock_guard<std::mutex> guard(state.mutex);
+        state.sink = LogSink::Stdout;
+        state.file.reset();
+        state.file_path.clear();
+        state.enabled = true;
+    });
+
+    mod.method("logging_set_file", [](const std::string& path, bool append) -> bool {
+        auto& state = log_state();
+        std::lock_guard<std::mutex> guard(state.mutex);
+        if (path.empty()) {
+            return false;
+        }
+        auto mode = std::ios::out | (append ? std::ios::app : std::ios::trunc);
+        auto file = std::make_unique<std::ofstream>(path, mode);
+        if (!file->is_open()) {
+            return false;
+        }
+        state.file_path = path;
+        state.file_append = append;
+        state.file = std::move(file);
+        state.sink = LogSink::File;
+        state.enabled = true;
+        return true;
     });
 
     mod.method("logging_enable_default", []() {
-        kafka::setGlobalLogger(kafka::DefaultLogger);
+        auto& state = log_state();
+        std::lock_guard<std::mutex> guard(state.mutex);
+        state.enabled = true;
+        state.use_default_format = true;
+        state.format = "{timestamp} [{level}] {message}";
+        state.sink = LogSink::Stdout;
+        state.file.reset();
+        state.file_path.clear();
     });
 
     mod.method("cleanup", []() {
@@ -253,6 +362,9 @@ JLCXX_MODULE define_julia_module(jlcxx::Module& mod)
 
     mod.method("create_kafka_consumer", [](int props_id) -> int {
         if (!properties_store.count(props_id)) return 0;
+        if (!properties_store[props_id]->contains("log_cb")) {
+            properties_store[props_id]->put("log_cb", global_log_callback());
+        }
         int id = next_id++;
         consumer_store[id] = std::make_shared<kafka::clients::consumer::KafkaConsumer>(*properties_store[props_id]);
         return id;

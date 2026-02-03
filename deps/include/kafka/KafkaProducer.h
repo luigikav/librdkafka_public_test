@@ -13,6 +13,7 @@
 #include <librdkafka/rdkafka.h>
 
 #include <cassert>
+#include <cctype>
 #include <condition_variable>
 #include <cstdint>
 #include <memory>
@@ -192,6 +193,15 @@ private:
                     }
                 }
             }
+            if (rk)
+            {
+                auto* client = static_cast<KafkaClient*>(rd_kafka_opaque(rk));
+                auto* producer = dynamic_cast<KafkaProducer*>(client);
+                if (producer)
+                {
+                    producer->logDelivery(rkmsg, error);
+                }
+            }
             _deliveryCb(producer::RecordMetadata{rkmsg, _recordId}, error);
         }
 
@@ -229,6 +239,65 @@ private:
     // Register Callbacks for rd_kafka_conf_t
     static void registerConfigCallbacks(rd_kafka_conf_t* conf);
 
+    static bool debugHasCategory(const std::string& debug, const std::string& category)
+    {
+        auto is_sep = [](unsigned char c) {
+            return c == ',' || c == ' ' || c == '\t' || c == '\n' || c == '\r';
+        };
+
+        std::string token;
+        token.reserve(debug.size());
+
+        for (unsigned char c : debug)
+        {
+            if (is_sep(c))
+            {
+                if (!token.empty())
+                {
+                    if (token == "all" || token == category)
+                    {
+                        return true;
+                    }
+                    token.clear();
+                }
+                continue;
+            }
+            token.push_back(static_cast<char>(std::tolower(c)));
+        }
+
+        if (!token.empty() && (token == "all" || token == category))
+        {
+            return true;
+        }
+        return false;
+    }
+
+    void logDelivery(const rd_kafka_message_t* rkmsg, const Error& error) const
+    {
+        if (!_logDelivery || !rkmsg)
+        {
+            return;
+        }
+        const char* topic = rkmsg->rkt ? rd_kafka_topic_name(rkmsg->rkt) : "";
+        const int partition = rkmsg->partition;
+        const long long offset = static_cast<long long>(rkmsg->offset);
+
+        if (error)
+        {
+            KAFKA_API_DO_LOG(Log::Level::Debug,
+                             "delivery failed topic[%s] partition[%d] offset[%lld] error[%s]",
+                             topic, partition, offset, error.toString().c_str());
+        }
+        else
+        {
+            KAFKA_API_DO_LOG(Log::Level::Debug,
+                             "delivery ok topic[%s] partition[%d] offset[%lld]",
+                             topic, partition, offset);
+        }
+    }
+
+    bool _logDelivery = false;
+
 #ifdef KAFKA_API_ENABLE_UNIT_TEST_STUBS
 public:
     using HandleProduceResponseCb = std::function<rd_kafka_resp_err_t(rd_kafka_t* /*rk*/, int32_t /*brokerid*/, uint64_t /*msgseq*/, rd_kafka_resp_err_t /*err*/)>;
@@ -258,6 +327,13 @@ KafkaProducer::KafkaProducer(const Properties&      properties)
 {
     // Start background polling (if needed)
     startBackgroundPollingIfNecessary([this](int timeoutMs){ pollCallbacks(timeoutMs); });
+
+    if (auto debug = KafkaClient::properties().getProperty("debug"))
+    {
+        _logDelivery = debugHasCategory(*debug, "msg")
+                    || debugHasCategory(*debug, "produce")
+                    || debugHasCategory(*debug, "producer");
+    }
 
     const auto propStr = KafkaClient::properties().toString();
     KAFKA_API_DO_LOG(Log::Level::Notice, "initializes with properties[%s]", propStr.c_str());
@@ -428,7 +504,17 @@ KafkaProducer::send(const producer::ProducerRecord& record,
     assert(uvCount == rkVUs.size());
 
     const Error sendResult{ rd_kafka_produceva(rk, rkVUs.data(), rkVUs.size()) };
-    KAFKA_THROW_IF_WITH_ERROR(sendResult);
+    if (sendResult)
+    {
+        if (_logDelivery)
+        {
+            const char* topicName = topic ? topic : "";
+            KAFKA_API_DO_LOG(Log::Level::Debug,
+                             "produce enqueue failed topic[%s] partition[%d] error[%s]",
+                             topicName, partition, sendResult.toString().c_str());
+        }
+        KAFKA_THROW_IF_WITH_ERROR(sendResult);
+    }
 
     // KafkaProducer::deliveryCallback would delete the "opaque"
     deliveryCbOpaque.release();
