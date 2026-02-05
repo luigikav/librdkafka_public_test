@@ -151,9 +151,9 @@ function main()
       julia> using Pkg
       julia> Pkg.develop(url="https://github.com/bhftbootcamp/Librdkafka.jl")
       Then:
-      $ cd ~/.julia/dev/Librdkafka
-      $ cmake -S deps/src -B deps/src/build
-      $ cmake --build deps/src/build
+      cd ~/.julia/dev/Librdkafka
+      cmake -S deps/src -B deps/src/build
+      cmake --build deps/src/build
 
     Tip:
       You can also provide a prebuilt library via:
