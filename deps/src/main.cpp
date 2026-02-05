@@ -165,7 +165,6 @@ JLCXX_MODULE define_julia_module(jlcxx::Module& mod)
 {
 
     static std::map<int, std::shared_ptr<kafka::Properties>> properties_store;
-    static std::map<int, std::shared_ptr<kafka::clients::producer::ProducerRecord>> record_store;
     static std::map<int, std::shared_ptr<kafka::clients::producer::KafkaProducer>> producer_store;
     static std::map<int, std::shared_ptr<kafka::clients::consumer::KafkaConsumer>> consumer_store;
     static int next_id = 1;
@@ -186,20 +185,6 @@ JLCXX_MODULE define_julia_module(jlcxx::Module& mod)
             properties_store[props_id]->put(key, value);
         }
     });
-    mod.method("create_producer_record", [](const std::string& topic, const std::string& key, const std::string& value) -> int {
-        int id = next_id++;
-        record_store[id] = std::make_shared<kafka::clients::producer::ProducerRecord>(
-            topic, kafka::Key(key.data(), key.size()), kafka::Value(value.data(), value.size()));
-        return id;
-    });
-
-    mod.method("producer_record_topic", [](int record_id) -> std::string {
-        if (record_store.count(record_id)) {
-            return record_store[record_id]->topic();
-        }
-        return "";
-    });
-
     mod.method("create_kafka_producer", [](int props_id) -> int {
         if (!properties_store.count(props_id)) return 0;
         if (!properties_store[props_id]->contains("log_cb")) {
@@ -208,18 +193,6 @@ JLCXX_MODULE define_julia_module(jlcxx::Module& mod)
         int id = next_id++;
         producer_store[id] = std::make_shared<kafka::clients::producer::KafkaProducer>(*properties_store[props_id]);
         return id;
-    });
-
-    mod.method("kafka_producer_send", [](int producer_id, int record_id) -> bool {
-        if (producer_store.count(producer_id) && record_store.count(record_id)) {
-            try {
-                producer_store[producer_id]->syncSend(*record_store[record_id]);
-                return true;
-            } catch (...) {
-                return false;
-            }
-        }
-        return false;
     });
 
     mod.method("producer_close", [](int producer_id) -> bool {
@@ -294,26 +267,6 @@ JLCXX_MODULE define_julia_module(jlcxx::Module& mod)
         state.sink = LogSink::Stdout;
         state.file.reset();
         state.file_path.clear();
-    });
-
-    mod.method("cleanup", []() {
-        for (auto& entry : producer_store) {
-            try {
-                entry.second->close();
-            } catch (...) {
-            }
-        }
-        for (auto& entry : consumer_store) {
-            try {
-                entry.second->close();
-            } catch (...) {
-            }
-        }
-        properties_store.clear();
-        record_store.clear();
-        producer_store.clear();
-        consumer_store.clear();
-        next_id = 1;
     });
 
     mod.method("get_bootstrap_servers", []() -> std::string {
@@ -466,9 +419,8 @@ using namespace kafka::clients::consumer;
 
 int main() {
     Properties props;
-    props.put("bootstrap.servers", "te-test-vm-app-01.mgt:9092");
+    props.put("bootstrap.servers", "localhost:9092");
     ProducerRecord record("test-topic", Key("test-key"), Value("test-value"));
-
     Error error;
     return 0;
 }

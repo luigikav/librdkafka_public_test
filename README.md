@@ -1,55 +1,87 @@
 # Librdkafka.jl
 
-Julia wrapper for [librdkafka](https://github.com/edenhill/librdkafka).
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/bhftbootcamp/Librdkafka.jl)
+[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://bhftbootcamp.github.io/Librdkafka.jl/stable/)
+[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://bhftbootcamp.github.io/Librdkafka.jl/dev/)
+[![Build Status](https://github.com/bhftbootcamp/Librdkafka.jl/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/bhftbootcamp/Librdkafka.jl/actions/workflows/ci.yml?query=branch%3Amaster)
+[![Registry](https://img.shields.io/badge/registry-Green-green)](https://github.com/bhftbootcamp/Green)
+
+Julia wrapper for librdkafka for producing and consuming Apache Kafka messages from Julia.
 
 ## Installation
 
-```julia
-using Pkg
-Pkg.add(url="https://github.com/luigikav/Librdkafka.jl")
+If you haven't installed our local registry yet, do that first:
+
+```
+] registry add https://github.com/bhftbootcamp/Green.git
 ```
 
-Pre-built binaries are automatically downloaded from GitHub Releases (Linux x86_64, Julia 1.10).
+To install Librdkafka, simply use the Julia package manager:
+
+```
+] add Librdkafka
+```
 
 ## Usage
 
-### Producer Example
+### Producer
 
 ```julia
 using Librdkafka
+
+topic = "julia-demo"
 
 p = KafkaProducer("localhost:9092")
-produce(p, "my-topic", 0, "key", "message payload")
-close(p)
+
+try
+    i = 1
+    while true
+        msg = "hello #$i from julia"
+        produce(p, topic, 0, "key", msg)
+        @info "Sent" msg
+        i += 1
+        sleep(1)
+    end
+finally
+    close(p) # unreachable here, Ctrl+C to stop
+end
 ```
 
-### Consumer Example
+### Consumer
 
 ```julia
 using Librdkafka
 
-c = KafkaConsumer("localhost:9092"; group_id="my-group")
-subscribe(c, ["my-topic"])
+topic = "julia-demo"
 
-records = poll(c; timeout_ms=1000)
-for record in records
-    println("Key: $(record.key), Value: $(record.value)")
+c = KafkaConsumer(
+    "localhost:9092";
+    group_id = "julia-demo-consumer",
+    config = Dict(
+        AUTO_OFFSET_RESET => "earliest",
+        ENABLE_AUTO_COMMIT => "false",
+    ),
+)
+
+subscribe!(c, [topic])
+
+try
+    while true
+        for r in poll(c; timeout_ms=1000)
+            @info "Got" key=r.key value=r.value offset=r.offset
+            commit_record(c, r)
+        end
+    end
+finally
+    close(c) # unreachable here, Ctrl+C to stop
 end
-
-commit(c)
-close(c)
 ```
 
-## Building from Source
+## Useful Links
 
-If needed:
+- [librdkafka](https://github.com/confluentinc/librdkafka) – Official library repository.
+- [librdkafka_jll](https://github.com/JuliaBinaryWrappers/librdkafka_jll.jl) – Julia binary wrapper for librdkafka.
 
-```bash
-cd src
-cmake -S . -B build
-cmake --build build
-```
+## Contributing
 
-## License
-
-TODO
+Contributions to Librdkafka are welcome! If you encounter a bug, have a feature request, or would like to contribute code, please open an issue or a pull request on GitHub.

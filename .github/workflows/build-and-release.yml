@@ -60,14 +60,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p lib
+          mkdir -p deps/lib
           libpath="$(find deps/src/build -type f -name "libkafka.${{ matrix.config.lib_ext }}" | head -n 1)"
           if [ -z "$libpath" ]; then
             echo "ERROR: libkafka.${{ matrix.config.lib_ext }} not found under deps/src/build"
             find deps/src/build -type f -name "libkafka.${{ matrix.config.lib_ext }}" -print
             exit 1
           fi
-          cp "$libpath" lib/
+          cp "$libpath" deps/lib/
 
       - name: Precompile all packages
         run: julia --project=. -e 'using Pkg; Pkg.precompile()'

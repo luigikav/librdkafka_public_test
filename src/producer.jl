@@ -1,79 +1,62 @@
-function KafkaProducer(bootstrap_servers::AbstractString; config::AbstractDict=Dict())
-    props_id = _build_properties(bootstrap_servers; config=config)
-    id = create_kafka_producer(props_id)
-    if id == 0
-        _throw_error(:operation, :producer_create,
-            "Failed to create KafkaProducer connection.",
-            details=_details(:bootstrap_servers => bootstrap_servers))
+mutable struct KafkaProducer
+    id::Int
+    bootstrap_servers::String
+    closed::Bool
+
+    function KafkaProducer(bootstrap_servers::AbstractString; config::AbstractDict=Dict())
+        bs = String(bootstrap_servers)
+        isempty(bs) && throw(ArgumentError("bootstrap_servers is empty."))
+        props_id = _B.create_properties()
+        _B.properties_put(props_id, BOOTSTRAP_SERVERS, bs)
+        for (k, v) in config
+            _B.properties_put(props_id, string(k), string(v))
+        end
+        id = _B.create_kafka_producer(props_id)
+        id == 0 && throw(ErrorException("Failed to create KafkaProducer (native returned null handle)."))
+        p = new(Int(id), bs, false)
+        finalizer(close, p)
+        return p
     end
-    producer = KafkaProducer(id, String(bootstrap_servers), false)
-    finalizer(close, producer)
-    return producer
 end
 
-function _ensure_producer_open(p::KafkaProducer, operation::Symbol, action::AbstractString)
-    if p.closed
-        _throw_error(:usage, operation,
-            "KafkaProducer is closed. Create a new producer before $action.",
-            details=_details(:producer_id => p.id, :bootstrap_servers => p.bootstrap_servers))
-    end
+Base.isopen(p::KafkaProducer) = !p.closed
+
+function Base.show(io::IO, p::KafkaProducer)
+    print(io, "KafkaProducer(", p.bootstrap_servers, ", id=", p.id, p.closed ? ", closed)" : ", open)")
+end
+
+@inline function _checkopen(p::KafkaProducer)
+    p.closed && _closed(:KafkaProducer, p.id)
+    return nothing
 end
 
 function Base.close(p::KafkaProducer)
     p.closed && return nothing
-    producer_close(p.id)
+    _B.producer_close(p.id)
     p.closed = true
     return nothing
 end
 
-function _bytes_length(s::AbstractString)
-    return ncodeunits(String(s))
+function produce(p::KafkaProducer, topic::Topic, partition::Partition, key::AbstractString, value::AbstractString)
+    _checkopen(p)
+    err = _B.produce(p.id, topic.name, partition.id, key, value)
+    err_s = String(err)
+    isempty(err_s) && return nothing
+    throw(ErrorException("Kafka produce failed: $err_s"))
 end
 
-function _handle_produce_error(err::AbstractString, operation::Symbol, details::Vector{String})
-    if occursin("Producer not found", err) || occursin("handle not found", err)
-        _throw_error(:usage, operation,
-            "KafkaProducer handle not found. It may be closed or invalid.",
-            details=details)
-    end
-    _throw_error(:operation, operation,
-        "Kafka producer failed to send message: $(err)",
-        details=vcat(details, "kafka_error=$(err)"))
+produce(p::KafkaProducer, topic::AbstractString, partition::Integer, key::AbstractString, value::AbstractString) =
+    produce(p, Topic(topic), Partition(partition), key, value)
+
+function produce_binary(p::KafkaProducer, topic::Topic, partition::Partition, key::AbstractString, value::Vector{UInt8})
+    _checkopen(p)
+    err = _B.produce_binary(p.id, topic.name, partition.id, key, value)
+    err_s = String(err)
+    isempty(err_s) && return nothing
+    throw(ErrorException("Kafka produce_binary failed: $err_s"))
 end
 
-function produce(p::KafkaProducer, topic::AbstractString, partition::Integer, key::AbstractString, value::AbstractString)
-    _ensure_producer_open(p, :produce, "producing messages")
-    topic_str = String(topic)
-    isempty(topic_str) && _throw_error(:usage, :produce, "Topic is empty. Provide a topic name.",
-        details=_details(:producer_id => p.id, :bootstrap_servers => p.bootstrap_servers))
-    key_str = String(key)
-    value_str = String(value)
-    details = _details(:producer_id => p.id, :bootstrap_servers => p.bootstrap_servers,
-                       :topic => topic_str, :partition => partition,
-                       :key_bytes => _bytes_length(key_str), :value_bytes => _bytes_length(value_str))
-    err = _with_kafka_error(:produce, "Kafka producer send failed.", details) do
-        nb_produce(Int(p.id), topic_str, Int(partition), key_str, value_str)
-    end
-    if !isempty(err)
-        _handle_produce_error(err, :produce, details)
-    end
-    return nothing
-end
+produce_binary(p::KafkaProducer, topic::AbstractString, partition::Integer, key::AbstractString, value::Vector{UInt8}) =
+    produce_binary(p, Topic(topic), Partition(partition), key, value)
 
-function produce_binary(p::KafkaProducer, topic::AbstractString, partition::Integer, key::AbstractString, value::Vector{UInt8})
-    _ensure_producer_open(p, :produce_binary, "producing messages")
-    topic_str = String(topic)
-    isempty(topic_str) && _throw_error(:usage, :produce_binary, "Topic is empty. Provide a topic name.",
-        details=_details(:producer_id => p.id, :bootstrap_servers => p.bootstrap_servers))
-    key_str = String(key)
-    details = _details(:producer_id => p.id, :bootstrap_servers => p.bootstrap_servers,
-                       :topic => topic_str, :partition => partition,
-                       :key_bytes => _bytes_length(key_str), :value_bytes => length(value))
-    err = _with_kafka_error(:produce_binary, "Kafka producer send failed.", details) do
-        nb_produce_binary(Int(p.id), topic_str, Int(partition), key_str, value)
-    end
-    if !isempty(err)
-        _handle_produce_error(err, :produce_binary, details)
-    end
-    return nothing
-end
+log_level!(p::KafkaProducer, level::Integer) = (_checkopen(p); _B.producer_set_log_level(p.id, Int(level)); p)

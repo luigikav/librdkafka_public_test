@@ -1,41 +1,11 @@
-function set_log_level!(p::KafkaProducer, level::Integer)
-    _ensure_producer_open(p, :producer_set_log_level, "changing log level")
-    ok = _with_kafka_error(:producer_set_log_level, "KafkaProducer set_log_level failed.",
-        _details(:producer_id => p.id, :bootstrap_servers => p.bootstrap_servers, :level => level)) do
-        producer_set_log_level(p.id, Int(level))
-    end
-    if !ok
-        _throw_error(:usage, :producer_set_log_level,
-            "KafkaProducer handle not found. It may be closed or invalid.",
-            details=_details(:producer_id => p.id, :bootstrap_servers => p.bootstrap_servers, :level => level))
-    end
-    return p
-end
+disable_logs!() = (_B.logging_disable(); nothing)
+log_format!(format::AbstractString=DEFAULT_LOG_FORMAT) = (_B.logging_set_format(String(format)); nothing)
+log_stdout!() = (_B.logging_set_stdout(); nothing)
 
-function set_log_level!(c::KafkaConsumer, level::Integer)
-    _ensure_consumer_open(c, :consumer_set_log_level, "changing log level")
-    ok = _with_kafka_error(:consumer_set_log_level, "KafkaConsumer set_log_level failed.",
-        _details(:consumer_id => c.id, :bootstrap_servers => c.bootstrap_servers, :group_id => c.group_id, :level => level)) do
-        consumer_set_log_level(c.id, Int(level))
-    end
-    if !ok
-        _throw_error(:usage, :consumer_set_log_level,
-            "KafkaConsumer handle not found. It may be closed or invalid.",
-            details=_details(:consumer_id => c.id, :bootstrap_servers => c.bootstrap_servers, :group_id => c.group_id, :level => level))
-    end
-    return c
-end
-
-disable_logs!() = (logging_disable(); nothing)
-set_log_format!(format::AbstractString=DEFAULT_LOG_FORMAT) = (logging_set_format(String(format)); nothing)
-set_log_stdout!() = (logging_set_stdout(); nothing)
-function set_log_file!(path::AbstractString; append::Bool=true)
-    ok = logging_set_file(String(path), append)
-    if !ok
-        _throw_error(:operation, :logging_set_file,
-            "Failed to open log file for writing.",
-            details=_details(:path => String(path), :append => append))
-    end
+function log_file!(path::AbstractString; append::Bool=true)
+    ok = _B.logging_set_file(String(path), append)
+    ok || throw(ErrorException("Failed to open log file for writing: $(path)"))
     return nothing
 end
-enable_default_logs!() = (logging_enable_default(); nothing)
+
+enable_default_logs!() = (_B.logging_enable_default(); nothing)
